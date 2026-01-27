@@ -1,0 +1,15 @@
+[dotenv@17.2.3] injecting env (6) from .env -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+Loaded exhibitorController
+Loaded visitorController
+Loaded invoiceController
+Loaded leadController
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+Server running on port 5000
+Database schema synchronized from schema.sql
+Ran migration: 001_create_organization_invites.sql
+Ran migration: 002_create_events.sql
+Ran migration: 003_create_exhibitor.sql
+Ran migration: 004_create_visitors.sql
+Ran migration: 005_create_invoices.sql
+Ran migration: 006_create_custom_plans.sql
+Ran migration: 007_create_leads.sql
