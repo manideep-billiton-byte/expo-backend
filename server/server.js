@@ -53,12 +53,30 @@ process.on('unhandledRejection', (reason, promise) => {
 const app = express();
 const port = process.env.PORT || 5000;
 
+// CORS configuration
 app.use(cors({
     origin: '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
-    credentials: false
+    credentials: false,
+    preflightContinue: false,
+    optionsSuccessStatus: 204
 }));
+
+// Additional CORS headers middleware
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+    res.header('Access-Control-Max-Age', '86400'); // 24 hours
+
+    // Handle preflight requests
+    if (req.method === 'OPTIONS') {
+        return res.status(204).end();
+    }
+    next();
+});
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
@@ -68,7 +86,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // Mock Data (will be replaced by DB queries)
 const dashboardData = {
     stats: [
-        { label: "Active Tenants", value: "248", change: "+12 this month", icon: "Building2", colorClass: "text-blue-500" },
+        { label: "Active Organisations", value: "248", change: "+12 this month", icon: "Building2", colorClass: "text-blue-500" },
         { label: "Active Events", value: "42", change: "8 ongoing", icon: "Calendar", colorClass: "text-emerald-500" },
         { label: "Total Exhibitors", value: "1,847", change: "+150 this week", icon: "ImageIcon", colorClass: "text-purple-500" },
         { label: "Registered Visitors", value: "24,582", change: "+2,340 today", icon: "Users", colorClass: "text-blue-400" },
@@ -102,6 +120,8 @@ const dashboardData = {
 app.get('/api/dashboard', (req, res) => {
     res.json(dashboardData);
 });
+// Organization specific dashboard stats
+app.get('/api/organization-dashboard-stats/:id', organizationController.getDashboardStats);
 
 // Invite endpoint
 app.post('/api/send-invite', organizationController.inviteOrganization);
@@ -109,6 +129,14 @@ app.post('/api/send-invite', organizationController.inviteOrganization);
 app.post('/api/create-organization', organizationController.createOrganization);
 // List organizations
 app.get('/api/organizations', organizationController.getOrganizations);
+// Get organization by ID
+app.get('/api/organizations/:id', organizationController.getOrganizationById);
+// Update organization
+app.put('/api/organizations/:id', organizationController.updateOrganization);
+// Suspend/Activate organization
+app.patch('/api/organizations/:id/status', organizationController.suspendOrganization);
+// Delete organization
+app.delete('/api/organizations/:id', organizationController.deleteOrganization);
 // Organization login
 app.post('/api/organization-login', organizationController.loginOrganization);
 // Create plan
@@ -186,7 +214,9 @@ app.post('/api/login', async (req, res) => {
 
     return res.status(401).json({ error: 'Invalid email or password' });
 });
-// Create user
+// Users
+app.get('/api/users', organizationController.getUsers);
+app.get('/api/users/:id', organizationController.getUserById);
 app.post('/api/users', organizationController.createUser);
 
 // Plans & Coupons
@@ -195,6 +225,7 @@ app.post('/api/verify-coupon', organizationController.verifyCoupon);
 
 // Events
 app.get('/api/events', eventController.getEvents);
+app.get('/api/events/:id', eventController.getEventById);
 app.post('/api/events', eventController.createEvent);
 app.get('/api/events/by-token/:token', eventController.getEventByToken);
 app.put('/api/events/:id/ground-layout', eventController.updateEventGroundLayout);
@@ -204,6 +235,11 @@ app.get('/api/exhibitors', exhibitorController.getExhibitors);
 app.post('/api/exhibitors', exhibitorController.createExhibitor);
 app.get('/api/exhibitors/upcoming-events/:organizationId', exhibitorController.getUpcomingEventsByOrganization);
 app.post('/api/exhibitors/register-event', exhibitorController.registerExhibitorForEvent);
+// Exhibitor CRUD operations
+app.get('/api/exhibitors/:id', exhibitorController.getExhibitorById);
+app.put('/api/exhibitors/:id', exhibitorController.updateExhibitor);
+app.patch('/api/exhibitors/:id/status', exhibitorController.suspendExhibitor);
+app.delete('/api/exhibitors/:id', exhibitorController.deleteExhibitor);
 
 
 // Visitors

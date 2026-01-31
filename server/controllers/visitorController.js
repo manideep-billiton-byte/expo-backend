@@ -17,7 +17,9 @@ const generateUniqueCode = () => {
 
 const getVisitors = async (req, res) => {
     try {
-        const result = await pool.query(`
+        const { organization_id } = req.query;
+
+        let query = `
             SELECT
                 v.id,
                 v.event_id,
@@ -36,9 +38,18 @@ const getVisitors = async (req, res) => {
                 v.updated_at,
                 ev.event_name
             FROM visitors v
-            LEFT JOIN events ev ON ev.id = v.event_id
-            ORDER BY v.created_at DESC
-        `);
+            LEFT JOIN events ev ON ev.id = v.event_id`;
+
+        let params = [];
+
+        if (organization_id) {
+            query += ' WHERE ev.organization_id = $1';
+            params.push(organization_id);
+        }
+
+        query += ' ORDER BY v.created_at DESC';
+
+        const result = await pool.query(query, params);
         return res.json(result.rows);
     } catch (dbErr) {
         console.error('Database error in getVisitors:', dbErr);

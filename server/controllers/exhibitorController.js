@@ -5,7 +5,9 @@ console.log('Loaded exhibitorController');
 
 const getExhibitors = async (req, res) => {
     try {
-        const result = await pool.query(`
+        const { organization_id } = req.query;
+
+        let query = `
             SELECT
                 e.id,
                 e.organization_id,
@@ -29,9 +31,18 @@ const getExhibitors = async (req, res) => {
                 org.org_name AS organization_name
             FROM exhibitors e
             LEFT JOIN events ev ON ev.id = e.event_id
-            LEFT JOIN organizations org ON org.id = e.organization_id
-            ORDER BY e.created_at DESC
-        `);
+            LEFT JOIN organizations org ON org.id = e.organization_id`;
+
+        let params = [];
+
+        if (organization_id) {
+            query += ' WHERE e.organization_id = $1';
+            params.push(organization_id);
+        }
+
+        query += ' ORDER BY e.created_at DESC';
+
+        const result = await pool.query(query, params);
         return res.json(result.rows);
     } catch (dbErr) {
         console.error('Database error in getExhibitors:', dbErr);
@@ -322,10 +333,218 @@ const registerExhibitorForEvent = async (req, res) => {
     }
 };
 
+// Get exhibitor by ID
+const getExhibitorById = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await pool.query(`
+            SELECT
+                e.id,
+                e.organization_id,
+                e.event_id,
+                e.company_name,
+                e.gst_number,
+                e.address,
+                e.industry,
+                e.logo_url,
+                e.contact_person,
+                e.email,
+                e.mobile,
+                e.stall_number,
+                e.stall_category,
+                e.access_status,
+                e.lead_capture,
+                e.communication,
+                e.created_at,
+                e.updated_at,
+                ev.event_name,
+                org.org_name AS organization_name
+            FROM exhibitors e
+            LEFT JOIN events ev ON ev.id = e.event_id
+            LEFT JOIN organizations org ON org.id = e.organization_id
+            WHERE e.id = $1
+        `, [id]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Exhibitor not found' });
+        }
+
+        return res.json({ exhibitor: result.rows[0] });
+    } catch (err) {
+        console.error('Error fetching exhibitor by ID:', err);
+        return res.status(500).json({ error: 'Failed to fetch exhibitor', details: err.message });
+    }
+};
+
+// Update exhibitor
+const updateExhibitor = async (req, res) => {
+    const { id } = req.params;
+    const p = req.body || {};
+
+    try {
+        // First check if exhibitor exists
+        const checkResult = await pool.query('SELECT id FROM exhibitors WHERE id = $1', [id]);
+        if (checkResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Exhibitor not found' });
+        }
+
+        // Build the update query dynamically based on provided fields
+        const fields = [];
+        const values = [];
+        let paramCount = 1;
+
+        if (p.company_name !== undefined) {
+            fields.push(`company_name = $${paramCount++}`);
+            values.push(p.company_name);
+        }
+        if (p.gst_number !== undefined) {
+            fields.push(`gst_number = $${paramCount++}`);
+            values.push(p.gst_number);
+        }
+        if (p.address !== undefined) {
+            fields.push(`address = $${paramCount++}`);
+            values.push(p.address);
+        }
+        if (p.industry !== undefined) {
+            fields.push(`industry = $${paramCount++}`);
+            values.push(p.industry);
+        }
+        if (p.logo_url !== undefined) {
+            fields.push(`logo_url = $${paramCount++}`);
+            values.push(p.logo_url);
+        }
+        if (p.contact_person !== undefined) {
+            fields.push(`contact_person = $${paramCount++}`);
+            values.push(p.contact_person);
+        }
+        if (p.email !== undefined) {
+            fields.push(`email = $${paramCount++}`);
+            values.push(p.email);
+        }
+        if (p.mobile !== undefined) {
+            fields.push(`mobile = $${paramCount++}`);
+            values.push(p.mobile);
+        }
+        if (p.stall_number !== undefined) {
+            fields.push(`stall_number = $${paramCount++}`);
+            values.push(p.stall_number);
+        }
+        if (p.stall_category !== undefined) {
+            fields.push(`stall_category = $${paramCount++}`);
+            values.push(p.stall_category);
+        }
+        if (p.access_status !== undefined) {
+            fields.push(`access_status = $${paramCount++}`);
+            values.push(p.access_status);
+        }
+        if (p.lead_capture !== undefined) {
+            fields.push(`lead_capture = $${paramCount++}`);
+            values.push(p.lead_capture);
+        }
+        if (p.communication !== undefined) {
+            fields.push(`communication = $${paramCount++}`);
+            values.push(p.communication);
+        }
+        if (p.organization_id !== undefined) {
+            fields.push(`organization_id = $${paramCount++}`);
+            values.push(p.organization_id);
+        }
+        if (p.event_id !== undefined) {
+            fields.push(`event_id = $${paramCount++}`);
+            values.push(p.event_id);
+        }
+
+        if (fields.length === 0) {
+            return res.status(400).json({ error: 'No fields to update' });
+        }
+
+        // Add updated_at
+        fields.push(`updated_at = NOW()`);
+        values.push(id);
+
+        const updateQuery = `UPDATE exhibitors SET ${fields.join(', ')} WHERE id = $${paramCount} RETURNING *`;
+        const result = await pool.query(updateQuery, values);
+
+        console.log(`Exhibitor ${id} updated successfully`);
+        return res.json({
+            success: true,
+            message: 'Exhibitor updated successfully',
+            exhibitor: result.rows[0]
+        });
+    } catch (err) {
+        console.error('Error updating exhibitor:', err);
+        return res.status(500).json({ error: 'Failed to update exhibitor', details: err.message });
+    }
+};
+
+// Suspend/Activate exhibitor (change status)
+const suspendExhibitor = async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!status || !['Active', 'Suspended', 'Inactive'].includes(status)) {
+        return res.status(400).json({ error: 'Valid status is required (Active, Suspended, or Inactive)' });
+    }
+
+    try {
+        const result = await pool.query(
+            'UPDATE exhibitors SET access_status = $1, updated_at = NOW() WHERE id = $2 RETURNING id, company_name, access_status',
+            [status, id]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Exhibitor not found' });
+        }
+
+        const action = status === 'Suspended' ? 'suspended' : 'activated';
+        console.log(`Exhibitor ${id} ${action} successfully`);
+
+        return res.json({
+            success: true,
+            message: `Exhibitor ${action} successfully`,
+            exhibitor: result.rows[0]
+        });
+    } catch (err) {
+        console.error('Error changing exhibitor status:', err);
+        return res.status(500).json({ error: 'Failed to change exhibitor status', details: err.message });
+    }
+};
+
+// Delete exhibitor
+const deleteExhibitor = async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        // Check if exhibitor exists first
+        const checkResult = await pool.query('SELECT id, company_name FROM exhibitors WHERE id = $1', [id]);
+        if (checkResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Exhibitor not found' });
+        }
+
+        const exhibitorName = checkResult.rows[0].company_name;
+
+        // Delete the exhibitor (cascading will handle related records if set up)
+        await pool.query('DELETE FROM exhibitors WHERE id = $1', [id]);
+
+        console.log(`Exhibitor ${id} (${exhibitorName}) deleted successfully`);
+        return res.json({
+            success: true,
+            message: `Exhibitor "${exhibitorName}" deleted successfully`
+        });
+    } catch (err) {
+        console.error('Error deleting exhibitor:', err);
+        return res.status(500).json({ error: 'Failed to delete exhibitor', details: err.message });
+    }
+};
+
 module.exports = {
     getExhibitors,
     createExhibitor,
     loginExhibitor,
     getUpcomingEventsByOrganization,
-    registerExhibitorForEvent
+    registerExhibitorForEvent,
+    getExhibitorById,
+    updateExhibitor,
+    suspendExhibitor,
+    deleteExhibitor
 };

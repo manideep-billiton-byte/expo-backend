@@ -347,7 +347,7 @@ module.exports = {
         const {
             orgName,
             tradeName,
-            tenantType,
+            organisationType,
             industry,
             size,
             apiAccess,
@@ -389,7 +389,7 @@ module.exports = {
             const fieldMap = {
                 orgName: ['org_name', 'name'],
                 tradeName: ['trade_name'],
-                tenantType: ['tenant_type'],
+                organisationType: ['organisation_type'],
                 industry: ['industry'],
                 size: ['size'],
                 apiAccess: ['api_access'],
@@ -433,7 +433,7 @@ module.exports = {
                                 case 'dateInc': return dateInc ? new Date(dateInc) : null;
                                 case 'orgName': return orgName;
                                 case 'tradeName': return tradeName;
-                                case 'tenantType': return tenantType;
+                                case 'organisationType': return organisationType;
                                 case 'industry': return industry;
                                 case 'size': return size;
                                 case 'businessType': return businessType;
@@ -999,6 +999,267 @@ module.exports = {
         } catch (err) {
             console.error('Error fetching coupons:', err);
             res.status(500).json({ error: 'Failed to fetch coupons', details: err.message });
+        }
+    },
+
+    // Get organization by ID
+    getOrganizationById: async (req, res) => {
+        const { id } = req.params;
+
+        if (!id) {
+            return res.status(400).json({ error: 'Organization ID is required' });
+        }
+
+        try {
+            const result = await pool.query(
+                'SELECT * FROM organizations WHERE id = $1',
+                [id]
+            );
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({ error: 'Organization not found' });
+            }
+
+            res.json({ success: true, organization: result.rows[0] });
+        } catch (err) {
+            console.error('Error fetching organization:', err);
+            res.status(500).json({ error: 'Failed to fetch organization', details: err.message });
+        }
+    },
+
+    // Update organization
+    updateOrganization: async (req, res) => {
+        const { id } = req.params;
+        const data = req.body || {};
+
+        if (!id) {
+            return res.status(400).json({ error: 'Organization ID is required' });
+        }
+
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+
+            // Check if organization exists
+            const checkOrg = await client.query('SELECT id FROM organizations WHERE id = $1', [id]);
+            if (checkOrg.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ error: 'Organization not found' });
+            }
+
+            // Get existing columns
+            const colRes = await client.query("SELECT column_name FROM information_schema.columns WHERE table_name='organizations'");
+            const cols = new Set(colRes.rows.map(r => r.column_name));
+
+            // Build update query dynamically
+            const updates = [];
+            const values = [];
+            let idx = 1;
+
+            const fieldMap = {
+                org_name: data.orgName || data.org_name,
+                trade_name: data.tradeName || data.trade_name,
+                organisation_type: data.organisationType || data.organisation_type,
+                industry: data.industry,
+                size: data.size,
+                api_access: data.apiAccess || data.api_access,
+                business_type: data.businessType || data.business_type,
+                is_registered: data.isRegistered || data.is_registered,
+                primary_email: data.email || data.primary_email,
+                primary_mobile: data.mobile || data.primary_mobile,
+                state: data.state,
+                district: data.district,
+                town: data.town,
+                address: data.address,
+                contact_name: data.contactName || data.contact_name,
+                contact_email: data.contactEmail || data.contact_email,
+                contact_phone: data.contactPhone || data.contact_phone,
+                alt_phone: data.altPhone || data.alt_phone,
+                website: data.website,
+                gst_number: data.gstNumber || data.gst_number,
+                pan_number: data.panNumber || data.pan_number,
+                reg_number: data.regNumber || data.reg_number,
+                date_inc: data.dateInc || data.date_inc,
+                is_verified: data.isVerified || data.is_verified,
+                features: data.features,
+                plan: data.plan,
+                status: data.status
+            };
+
+            for (const [col, value] of Object.entries(fieldMap)) {
+                if (cols.has(col) && value !== undefined && value !== null) {
+                    updates.push(`${col} = $${idx}`);
+                    values.push(value);
+                    idx++;
+                }
+            }
+
+            if (cols.has('updated_at')) {
+                updates.push('updated_at = NOW()');
+            }
+
+            if (updates.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: 'No valid fields to update' });
+            }
+
+            values.push(id);
+            const sql = `UPDATE organizations SET ${updates.join(', ')} WHERE id = $${idx} RETURNING *`;
+
+            const result = await client.query(sql, values);
+            await client.query('COMMIT');
+
+            res.json({ success: true, message: 'Organization updated successfully', organization: result.rows[0] });
+        } catch (err) {
+            await client.query('ROLLBACK');
+            console.error('Error updating organization:', err);
+            res.status(500).json({ error: 'Failed to update organization', details: err.message });
+        } finally {
+            client.release();
+        }
+    },
+
+    // Suspend/Activate organization
+    suspendOrganization: async (req, res) => {
+        const { id } = req.params;
+        const { status } = req.body; // 'Suspended' or 'Active'
+
+        if (!id) {
+            return res.status(400).json({ error: 'Organization ID is required' });
+        }
+
+        if (!status || !['Suspended', 'Active'].includes(status)) {
+            return res.status(400).json({ error: 'Valid status is required (Suspended or Active)' });
+        }
+
+        try {
+            const result = await pool.query(
+                'UPDATE organizations SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
+                [status, id]
+            );
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({ error: 'Organization not found' });
+            }
+
+            const action = status === 'Suspended' ? 'suspended' : 'activated';
+            res.json({ success: true, message: `Organization ${action} successfully`, organization: result.rows[0] });
+        } catch (err) {
+            console.error('Error updating organization status:', err);
+            res.status(500).json({ error: 'Failed to update organization status', details: err.message });
+        }
+    },
+
+    // Delete organization
+    deleteOrganization: async (req, res) => {
+        const { id } = req.params;
+
+        if (!id) {
+            return res.status(400).json({ error: 'Organization ID is required' });
+        }
+
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+
+            // Check if organization exists
+            const checkOrg = await client.query('SELECT id, org_name FROM organizations WHERE id = $1', [id]);
+            if (checkOrg.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ error: 'Organization not found' });
+            }
+
+            // Delete organization (cascade will handle related records if configured)
+            await client.query('DELETE FROM organizations WHERE id = $1', [id]);
+
+            await client.query('COMMIT');
+
+            res.json({ success: true, message: 'Organization deleted successfully' });
+        } catch (err) {
+            await client.query('ROLLBACK');
+            console.error('Error deleting organization:', err);
+            res.status(500).json({ error: 'Failed to delete organization', details: err.message });
+        } finally {
+            client.release();
+        }
+    },
+
+    // Get all users
+    getUsers: async (req, res) => {
+        try {
+            const result = await pool.query(`
+                SELECT u.*, o.org_name as organization_name 
+                FROM users u
+                LEFT JOIN organizations o ON u.organization_id = o.id
+                ORDER BY u.created_at DESC
+            `);
+            res.json(result.rows);
+        } catch (err) {
+            console.error('Error fetching users:', err);
+            res.status(500).json({ error: 'Failed to fetch users', details: err.message });
+        }
+    },
+
+    // Get user by ID
+    getUserById: async (req, res) => {
+        const { id } = req.params;
+        try {
+            const result = await pool.query(`
+                SELECT u.*, o.org_name as organization_name 
+                FROM users u
+                LEFT JOIN organizations o ON u.organization_id = o.id
+                WHERE u.id = $1
+            `, [id]);
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({ error: 'User not found' });
+            }
+
+            res.json(result.rows[0]);
+        } catch (err) {
+            console.error('Error fetching user:', err);
+            res.status(500).json({ error: 'Failed to fetch user details', details: err.message });
+        }
+    },
+
+    // Get dashboard stats for organization
+    getDashboardStats: async (req, res) => {
+        const { id } = req.params; // Organization ID
+
+        if (!id) {
+            return res.status(400).json({ error: 'Organization ID is required' });
+        }
+
+        const client = await pool.connect();
+        try {
+            // Run counts in parallel
+            const [eventsRes, exhibitorsRes, visitorsRes] = await Promise.all([
+                client.query('SELECT COUNT(*) FROM events WHERE organization_id = $1', [id]),
+                client.query('SELECT COUNT(*) FROM exhibitors WHERE organization_id = $1', [id]),
+                client.query(`
+                    SELECT COUNT(v.id) 
+                    FROM visitors v 
+                    JOIN events e ON v.event_id = e.id 
+                    WHERE e.organization_id = $1
+                `, [id])
+            ]);
+
+            const stats = {
+                totalEvents: parseInt(eventsRes.rows[0].count),
+                totalExhibitors: parseInt(exhibitorsRes.rows[0].count),
+                totalVisitors: parseInt(visitorsRes.rows[0].count)
+            };
+
+            res.json({
+                success: true,
+                stats
+            });
+
+        } catch (err) {
+            console.error('Error fetching dashboard stats:', err);
+            res.status(500).json({ error: 'Failed to fetch dashboard stats', details: err.message });
+        } finally {
+            client.release();
         }
     }
 };
