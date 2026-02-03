@@ -206,9 +206,13 @@ const createEvent = async (req, res) => {
             <div class="qr-section">
                 <h3>📱 Scan to Register</h3>
                 <p>Share this QR code with your attendees for quick registration</p>
-                <div class="qr-code-img">
-                    <img src="${qrImageUrl}" alt="Event Registration QR Code" width="200" style="display: block; margin: 0 auto;">
-                </div>
+                <table align="center" style="margin: 20px auto;">
+                  <tr>
+                    <td align="center" style="background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                      <img src="${qrImageUrl}" width="200" alt="Event Registration QR Code" style="display: block; border: 0; margin: 0 auto;" />
+                    </td>
+                  </tr>
+                </table>
                 <p style="margin-top: 15px; font-size: 12px;">Attendees can scan this code with their phone camera to access the registration page instantly.</p>
             </div>
             ` : ''}
@@ -353,4 +357,150 @@ const getEventById = async (req, res) => {
     }
 };
 
-module.exports = { getEvents, createEvent, getEventByToken, updateEventGroundLayout, getEventById };
+// Update event
+const updateEvent = async (req, res) => {
+    const { id } = req.params;
+    const p = req.body || {};
+
+    try {
+        // First check if event exists
+        const checkResult = await pool.query('SELECT * FROM events WHERE id = $1', [id]);
+        if (checkResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Event not found' });
+        }
+
+        const fields = [];
+        const values = [];
+        let paramCount = 1;
+
+        // Helper to add field update
+        const addField = (col, val) => {
+            if (val !== undefined) {
+                fields.push(`${col} = $${paramCount++}`);
+                values.push(val);
+            }
+        };
+
+        // Helper for JSON fields
+        const addJsonField = (col, val) => {
+            if (val !== undefined) {
+                fields.push(`${col} = $${paramCount++}`);
+                values.push(JSON.stringify(val));
+            }
+        };
+
+        if (p.eventName !== undefined) {
+            addField('event_name', p.eventName);
+            addField('name', p.eventName); // legacy column
+        }
+        addField('description', p.description);
+        addField('event_type', p.eventType);
+        addField('event_mode', p.eventMode);
+        addField('industry', p.industry);
+        addField('organizer_name', p.organizerName);
+        addField('contact_person', p.contactPerson);
+        addField('organizer_email', p.organizerEmail);
+        addField('organizer_mobile', p.organizerMobile);
+        addField('venue', p.venue);
+        addField('city', p.city);
+        addField('state', p.state);
+        addField('country', p.country);
+        addField('start_date', p.startDate);
+        addField('end_date', p.endDate);
+        addField('status', p.status);
+        addField('enable_stalls', p.enableStalls);
+        addField('ground_layout_url', p.groundLayoutUrl);
+
+        addJsonField('registration', p.registration);
+        addJsonField('lead_capture', p.leadCapture);
+        addJsonField('communication', p.communication);
+        addJsonField('stall_config', p.stallConfig);
+        addJsonField('stall_types', p.stallTypes);
+
+        if (fields.length === 0) {
+            return res.status(400).json({ error: 'No fields to update' });
+        }
+
+        values.push(id);
+        const query = `UPDATE events SET ${fields.join(', ')} WHERE id = $${paramCount} RETURNING *`;
+
+        const result = await pool.query(query, values);
+
+        console.log(`Event ${id} updated successfully`);
+        return res.json({
+            success: true,
+            message: 'Event updated successfully',
+            event: result.rows[0]
+        });
+    } catch (err) {
+        console.error('Error updating event:', err);
+        return res.status(500).json({ error: 'Failed to update event', details: err.message });
+    }
+};
+
+// Delete event
+const deleteEvent = async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const checkResult = await pool.query('SELECT event_name FROM events WHERE id = $1', [id]);
+        if (checkResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Event not found' });
+        }
+
+        const eventName = checkResult.rows[0].event_name;
+
+        await pool.query('DELETE FROM events WHERE id = $1', [id]);
+
+        console.log(`Event ${id} (${eventName}) deleted successfully`);
+        return res.json({
+            success: true,
+            message: `Event "${eventName}" deleted successfully`
+        });
+    } catch (err) {
+        console.error('Error deleting event:', err);
+        return res.status(500).json({ error: 'Failed to delete event', details: err.message });
+    }
+};
+
+// Update event status
+const updateEventStatus = async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!status) {
+        return res.status(400).json({ error: 'Status is required' });
+    }
+
+    try {
+        const result = await pool.query(
+            'UPDATE events SET status = $1 WHERE id = $2 RETURNING id, event_name, status',
+            [status, id]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Event not found' });
+        }
+
+        console.log(`Event ${id} status updated to ${status}`);
+        return res.json({
+            success: true,
+            message: `Event status updated to ${status}`,
+            event: result.rows[0]
+        });
+    } catch (err) {
+        console.error('Error updating event status:', err);
+        return res.status(500).json({ error: 'Failed to update event status', details: err.message });
+    }
+};
+
+module.exports = {
+    getEvents,
+    createEvent,
+    getEventByToken,
+    updateEventGroundLayout,
+    getEventById,
+    updateEvent,
+    deleteEvent,
+    updateEventStatus
+};

@@ -91,14 +91,15 @@ const uploadQRToS3 = async (qrBuffer, eventId) => {
     }
 
     const bucketName = process.env.S3_QR_BUCKET || 'expo-project-prod-frontend';
-    const fileName = `qrs/event-${eventId}.png`;
+    const fileName = `qr/event_${eventId}.png`;
 
     const params = {
         Bucket: bucketName,
         Key: fileName,
         Body: qrBuffer,
         ContentType: 'image/png',
-        CacheControl: 'max-age=31536000' // Cache for 1 year (QR codes don't change)
+        CacheControl: 'max-age=31536000', // Cache for 1 year (QR codes don't change)
+        ACL: 'public-read' // Make the QR image publicly readable for email clients
     };
 
     try {
@@ -109,10 +110,10 @@ const uploadQRToS3 = async (qrBuffer, eventId) => {
         const cloudFrontDomain = process.env.CLOUDFRONT_DOMAIN || 'd36p7i1koir3da.cloudfront.net';
         const qrUrl = `https://${cloudFrontDomain}/${fileName}`;
 
-        console.log(`QR code uploaded to S3: ${qrUrl}`);
+        console.log(`✅ QR code uploaded to S3 with public-read ACL: ${qrUrl}`);
         return qrUrl;
     } catch (error) {
-        console.error('Error uploading QR to S3:', error.message);
+        console.error('❌ Error uploading QR to S3:', error.message);
         // Fall back to local storage
         return saveQRLocally(qrBuffer, eventId);
     }

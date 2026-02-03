@@ -326,4 +326,86 @@ const getVisitorByCode = async (req, res) => {
     }
 };
 
-module.exports = { getVisitors, createVisitor, loginVisitor, getVisitorByCode };
+const updateVisitor = async (req, res) => {
+    const { id } = req.params;
+    const p = req.body || {};
+
+    try {
+        const checkResult = await pool.query('SELECT id FROM visitors WHERE id = $1', [id]);
+        if (checkResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Visitor not found' });
+        }
+
+        const fields = [];
+        const values = [];
+        let paramCount = 1;
+
+        const addField = (col, val) => {
+            if (val !== undefined) {
+                fields.push(`${col} = $${paramCount++}`);
+                values.push(val);
+            }
+        };
+
+        addField('first_name', p.firstName);
+        addField('last_name', p.lastName);
+        addField('email', p.email);
+        addField('mobile', p.mobile);
+        addField('gender', p.gender);
+        addField('age_group', p.age);
+        addField('organization', p.organization);
+        addField('designation', p.designation);
+        addField('visitor_category', p.visitorCategory);
+        addField('valid_dates', p.validDates);
+
+        if (p.communication !== undefined) {
+            fields.push(`communication = $${paramCount++}`);
+            values.push(p.communication);
+        }
+
+        if (fields.length === 0) {
+            return res.status(400).json({ error: 'No fields to update' });
+        }
+
+        values.push(id);
+        const query = `UPDATE visitors SET ${fields.join(', ')}, updated_at = NOW() WHERE id = $${paramCount} RETURNING *`;
+
+        const result = await pool.query(query, values);
+
+        console.log(`Visitor ${id} updated successfully`);
+        return res.json({
+            success: true,
+            message: 'Visitor updated successfully',
+            visitor: result.rows[0]
+        });
+    } catch (err) {
+        console.error('Error updating visitor:', err);
+        return res.status(500).json({ error: 'Failed to update visitor', details: err.message });
+    }
+};
+
+const deleteVisitor = async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const checkResult = await pool.query('SELECT first_name, last_name FROM visitors WHERE id = $1', [id]);
+        if (checkResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Visitor not found' });
+        }
+
+        const name = `${checkResult.rows[0].first_name} ${checkResult.rows[0].last_name}`.trim();
+
+        await pool.query('DELETE FROM visitors WHERE id = $1', [id]);
+
+        console.log(`Visitor ${id} (${name}) deleted successfully`);
+        return res.json({
+            success: true,
+            message: `Visitor "${name}" deleted successfully`
+        });
+    } catch (err) {
+        console.error('Error deleting visitor:', err);
+        return res.status(500).json({ error: 'Failed to delete visitor', details: err.message });
+    }
+};
+
+module.exports = { getVisitors, createVisitor, loginVisitor, getVisitorByCode, updateVisitor, deleteVisitor };
